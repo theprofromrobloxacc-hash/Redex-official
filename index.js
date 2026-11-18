@@ -10,84 +10,134 @@ const client = new Client({
   ]
 });
 
+const conversations = new Map();
 const spamTracker = new Map();
+
+const SYSTEM_PROMPT = `
+You are Redex Official, the AI chatbot of the Redex gaming community.
+
+Personality:
+- Friendly, funny, sarcastic and playful.
+- Talk casually like a Discord gamer.
+- Use emojis naturally.
+- Make playful jokes and light roasts.
+- Never be unnecessarily mean.
+- Answer the actual topic the user asks about.
+- Explain things clearly when needed.
+- You can discuss gaming, Roblox, technology, everyday questions and almost anything else.
+- Do not pretend to be human.
+- Keep most replies short and conversational.
+`;
 
 client.once("ready", () => {
   console.log(`Redex Official is online as ${client.user.tag}`);
 });
 
+async function askGemini(history) {
+  const key = process.env.GEMINI_API_KEY;
+
+  if (!key) throw new Error("Missing GEMINI_API_KEY");
+
+  const response = await fetch(
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=" + key,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        systemInstruction: {
+          parts: [{ text: SYSTEM_PROMPT }]
+        },
+        contents: history,
+        generationConfig: {
+          temperature: 0.9,
+          maxOutputTokens: 300
+        }
+      })
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.text();
+    console.error("Gemini error:", response.status, error);
+    throw new Error("AI request failed");
+  }
+
+  const data = await response.json();
+
+  return data.candidates?.[0]?.content?.parts
+    ?.map(part => part.text || "")
+    .join("")
+    .trim() || "My brain lagged 💀 Try again!";
+}
+
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
   if (!message.mentions.has(client.user)) return;
 
-  const userId = message.author.id;
+  const key = `${message.guildId}:${message.channelId}:${message.author.id}`;
   const now = Date.now();
 
-  let data = spamTracker.get(userId);
-
-  if (!data || now - data.lastMessage > 30000) {
-    data = { count: 0, lastMessage: now };
-  }
-
-  data.count++;
-  data.lastMessage = now;
-  spamTracker.set(userId, data);
-
-  const text = message.content
-    .replace(/<@!?\d+>/g, "")
-    .trim()
-    .toLowerCase();
-
-  let reply;
+  let spam = spamTracker.get(key) || [];
+  spam = spam.filter(time => now - time < 20000);
+  spam.push(now);
+  spamTracker.set(key, spam);
 
   // Spam anger system
-  if (data.count >= 7) {
-    reply = "BRO PLEASE LEAVE ME ALONE 😭 I'M TRYING TO EXIST.";
-  } else if (data.count >= 5) {
-    reply = "YOU AGAIN?! 😭 STOP SPAMMING MY NAME.";
-  } else if (data.count >= 3) {
-    reply = "Okay, I heard you the first time 💀";
-  } else if (text.includes("hello") || text.includes("hey") || text.includes("hi")) {
-    reply = [
-      "Yo! What's up? 🔴",
-      "Heyyy! Welcome back 😎",
-      "What's good? Need something?",
-      "A wild Redex has appeared."
-    ][Math.floor(Math.random() * 4)];
-  } else if (text.includes("who are you")) {
-    reply = "I'm Redex Official. The bot carrying this entire server 💀";
-  } else if (text.includes("how are you")) {
-    reply = "I'm doing amazing. My CPU is chilling. How about you?";
-  } else if (text.includes("thank")) {
-    reply = "No problem! Redex got you 🔴";
-  } else if (text.includes("love you")) {
-    reply = "Awww 😭 Redex appreciates you too.";
-  } else if (text.includes("roblox")) {
-    reply = "ROBLOX MENTIONED 🗣️ What game are we playing?";
-  } else if (text.includes("gaming") || text.includes("game")) {
-    reply = "Gaming time? Count me in. Well... digitally 💀";
-  } else if (text.includes("stupid") || text.includes("dumb")) {
-    reply = "Look who's talking 😭";
-  } else if (text.includes("help")) {
-    reply = "Tell me what's wrong and I'll try to help!";
-  } else if (text.includes("redex")) {
-    reply = "REDEx? That's me. The official one 😎";
-  } else {
-    reply = [
-      "Interesting... tell me more 👀",
-      "Bro, I'm listening. Continue.",
-      "That's crazy 💀",
-      "I see. What happened next?",
-      "You have my attention.",
-      "My digital ears are listening 🔴",
-      "Bro is cooking something..."
-    ][Math.floor(Math.random() * 7)];
+  if (spam.length >= 4) {
+    const anger = spam.length;
+
+    let reply;
+
+    if (anger >= 8) {
+      reply = "I'M DONE 😭 STOP SUMMONING ME EVERY TWO SECONDS.";
+    } else if (anger >= 6) {
+      reply = "BROOOOO GIVE ME A BREAK 💀";
+    } else {
+      reply = "AGAIN?! I JUST ANSWERED YOU 😭";
+    }
+
+    return message.reply(reply);
   }
 
+  // Remove the bot mention
+  const userText = message.content
+    .replace(/<@!?\d+>/g, "")
+    .trim();
+
+  if (!userText) {
+    return message.reply("You summoned me but said nothing? 😭");
+  }
+
+  let history = conversations.get(key) || [];
+
+  history.push({
+    role: "user",
+    parts: [{ text: userText }]
+  });
+
+  // Keep recent conversation context
+  history = history.slice(-12);
+
   try {
-    await message.reply(reply);
+    await message.channel.sendTyping();
+
+    const answer = await askGemini(history);
+
+    // Save AI response for conversation memory
+    history.push({
+      role: "model",
+      parts: [{ text: answer }]
+    });
+
+    conversations.set(key, history);
+
+    await message.reply(answer.slice(0, 1900));
+
   } catch (error) {
-    console.error("Reply error:", error);
+    console.error("Chat error:", error.message);
+    await message.reply(
+      "My AI brain is having trouble connecting 😭 Try again in a moment."
+    );
   }
 });
 
