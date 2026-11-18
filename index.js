@@ -23,7 +23,7 @@ const client = new Client({
 // Put your #redex-ai-chat channel ID here
 const CHAT_CHANNEL_ID = "1572516274339188778";
 
-const MODEL = "gemini-3.8-flash";
+const MODEL = "gemini-flash-latest";
 const conversations = new Map();
 const spamTracker = new Map();
 
