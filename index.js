@@ -39,5 +39,10 @@ client.on("messageCreate", async (message) => {
 
   await message.reply(reply);
 });
+const http = require("http");
 
+http.createServer((req, res) => {
+  res.writeHead(200);
+  res.end("Redex Official is online!");
+}).listen(process.env.PORT || 3000);
 client.login(process.env.DISCORD_TOKEN);
