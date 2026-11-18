@@ -1,6 +1,16 @@
 
 const { Client, GatewayIntentBits } = require("discord.js");
-const http = require("http");
+const express = require("express");
+
+const app = express();
+
+app.get("/", (req, res) => {
+  res.send("Redex Official is online!");
+});
+
+app.listen(process.env.PORT || 3000, () => {
+  console.log("Redex Official server started.");
+});
 
 const client = new Client({
   intents: [
@@ -10,140 +20,89 @@ const client = new Client({
   ]
 });
 
-const conversations = new Map();
-const spamTracker = new Map();
+// Replace this with your actual chat channel ID
+const CHAT_CHANNEL_ID = "1572516274339188778";
 
-const SYSTEM_PROMPT = `
-You are Redex Official, the AI chatbot of the Redex gaming community.
+const histories = new Map();
+const spam = new Map();
 
-Personality:
-- Friendly, funny, sarcastic and playful.
-- Talk casually like a Discord gamer.
-- Use emojis naturally.
-- Make playful jokes and light roasts.
-- Never be unnecessarily mean.
-- Answer the actual topic the user asks about.
-- Explain things clearly when needed.
-- You can discuss gaming, Roblox, technology, everyday questions and almost anything else.
-- Do not pretend to be human.
-- Keep most replies short and conversational.
-`;
+function getReply(text, history, user) {
+  const lower = text.toLowerCase();
 
-client.once("ready", () => {
-  console.log(`Redex Official is online as ${client.user.tag}`);
-});
-
-async function askGemini(history) {
-  const key = process.env.GEMINI_API_KEY;
-
-  if (!key) throw new Error("Missing GEMINI_API_KEY");
-
-  const response = await fetch(
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=" + key,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        systemInstruction: {
-          parts: [{ text: SYSTEM_PROMPT }]
-        },
-        contents: history,
-        generationConfig: {
-          temperature: 0.9,
-          maxOutputTokens: 300
-        }
-      })
-    }
-  );
-
-  if (!response.ok) {
-    const error = await response.text();
-    console.error("Gemini error:", response.status, error);
-    throw new Error("AI request failed");
+  if (lower.includes("hello") || lower.includes("hey") || lower.includes("hi")) {
+    return `Yooo ${user}! What's up? 😭`;
   }
 
-  const data = await response.json();
+  if (lower.includes("how are you")) {
+    return "I'm chilling bro, just watching the server 💀 How about you?";
+  }
 
-  return data.candidates?.[0]?.content?.parts
-    ?.map(part => part.text || "")
-    .join("")
-    .trim() || "My brain lagged 💀 Try again!";
+  if (lower.includes("roblox")) {
+    return "ROBLOX MENTIONED 🔥 What game are you playing?";
+  }
+
+  if (lower.includes("game")) {
+    return "What game are we talking about? 👀";
+  }
+
+  if (lower.includes("sad") || lower.includes("depressed")) {
+    return "Hey bro, what's going on? You can talk to me. I'm listening ❤️";
+  }
+
+  if (lower.includes("joke")) {
+    return "Why did the Roblox player cross the road? To get disconnected on the other side 💀";
+  }
+
+  if (lower.includes("bye")) {
+    return "Later bro! Don't forget about Redex 😎";
+  }
+
+  if (lower.includes("?")) {
+    return "Interesting question bro 👀 Give me a little more context so I can help.";
+  }
+
+  return "Wait bro, tell me more about that 😭";
 }
 
-client.on("messageCreate", async (message) => {
-  if (message.author.bot) return;
-  if (!message.mentions.has(client.user)) return;
+client.once("ready", () => {
+  console.log(`Redex Official online as ${client.user.tag}`);
+});
 
-  const key = `${message.guildId}:${message.channelId}:${message.author.id}`;
+client.on("messageCreate", async message => {
+  if (message.author.bot) return;
+  if (message.channelId !== CHAT_CHANNEL_ID) return;
+
+  const userId = message.author.id;
   const now = Date.now();
 
-  let spam = spamTracker.get(key) || [];
-  spam = spam.filter(time => now - time < 20000);
-  spam.push(now);
-  spamTracker.set(key, spam);
+  const previous = spam.get(userId) || [];
+  const recent = previous.filter(time => now - time < 10000);
+  recent.push(now);
+  spam.set(userId, recent);
 
-  // Spam anger system
-  if (spam.length >= 4) {
-    const anger = spam.length;
-
-    let reply;
-
-    if (anger >= 8) {
-      reply = "I'M DONE 😭 STOP SUMMONING ME EVERY TWO SECONDS.";
-    } else if (anger >= 6) {
-      reply = "BROOOOO GIVE ME A BREAK 💀";
-    } else {
-      reply = "AGAIN?! I JUST ANSWERED YOU 😭";
-    }
-
-    return message.reply(reply);
+  if (recent.length > 5) {
+    await message.reply("BRO 😭 STOP SPAMMING ME. LET ME BREATHE.");
+    return;
   }
 
-  // Remove the bot mention
-  const userText = message.content
-    .replace(/<@!?\d+>/g, "")
-    .trim();
-
-  if (!userText) {
-    return message.reply("You summoned me but said nothing? 😭");
-  }
-
-  let history = conversations.get(key) || [];
+  const history = histories.get(userId) || [];
 
   history.push({
     role: "user",
-    parts: [{ text: userText }]
+    content: message.content
   });
 
-  // Keep recent conversation context
-  history = history.slice(-12);
+  if (history.length > 10) history.shift();
 
-  try {
-    await message.channel.sendTyping();
+  histories.set(userId, history);
 
-    const answer = await askGemini(history);
+  const reply = getReply(
+    message.content,
+    history,
+    message.author.username
+  );
 
-    // Save AI response for conversation memory
-    history.push({
-      role: "model",
-      parts: [{ text: answer }]
-    });
-
-    conversations.set(key, history);
-
-    await message.reply(answer.slice(0, 1900));
-
-  } catch (error) {
-    console.error("Chat error:", error.message);
-    await message.reply(
-      "My AI brain is having trouble connecting 😭 Try again in a moment."
-    );
-  }
+  await message.reply(reply);
 });
-
-http.createServer((req, res) => {
-  res.writeHead(200);
-  res.end("Redex Official is online!");
-}).listen(process.env.PORT || 3000);
 
 client.login(process.env.DISCORD_TOKEN);
