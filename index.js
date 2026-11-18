@@ -21,7 +21,7 @@ const client = new Client({
 });
 
 // Put your #redex-ai-chat channel ID here
-const CHAT_CHANNEL_ID = "YOUR_CHANNEL_ID_HERE";
+const CHAT_CHANNEL_ID = "1572516274339188778";
 
 const MODEL = "gemini-3.8-flash";
 const conversations = new Map();
