@@ -8,8 +8,12 @@ app.get("/", (req, res) => {
   res.send("Redex Official is online!");
 });
 
-app.listen(process.env.PORT || 3000, () => {
-  console.log("Redex Official server started.");
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Redex Official server listening on port ${PORT}`);
+});const PORT = process.env.PORT || 3000;
+
 });
 
 const client = new Client({
