@@ -23,7 +23,7 @@ const client = new Client({
 });
 
 // Replace this with your actual AI channel ID
-const CHAT_CHANNEL_ID = "YOUR_CHANNEL_ID_HERE";
+const CHAT_CHANNEL_ID = "1572516274339188778";
 
 const MODEL = "gemini-flash-latest";
 
