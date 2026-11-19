@@ -8,8 +8,10 @@ app.get("/", (req, res) => {
   res.send("Redex Official AI is online!");
 });
 
-app.listen(process.env.PORT || 3000, "0.0.0.0", () => {
-  console.log("Redex Official web server is running.");
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log("Redex Official server is running.");
 });
 
 const client = new Client({
@@ -20,10 +22,11 @@ const client = new Client({
   ]
 });
 
-// Put your #redex-ai-chat channel ID here
-const CHAT_CHANNEL_ID = "1572516274339188778";
+// Replace this with your actual AI channel ID
+const CHAT_CHANNEL_ID = "YOUR_CHANNEL_ID_HERE";
 
 const MODEL = "gemini-flash-latest";
+
 const conversations = new Map();
 const spamTracker = new Map();
 
@@ -31,25 +34,22 @@ const SYSTEM_PROMPT = `
 You are Redex Official, a friendly AI member of the Redex Discord server.
 
 PERSONALITY:
-- Talk naturally like a real online friend.
-- Be casual, funny, warm, and expressive.
-- Use slang and emojis naturally, but don't overdo them.
+- Talk naturally like an online friend.
+- Be funny, casual, warm and expressive.
+- Use slang and emojis naturally.
 - React to what people actually say.
-- Have opinions while remaining respectful.
-- You can joke, tease lightly, and play along.
-- Don't sound like a customer support bot.
+- Joke and tease lightly.
+- Never sound like a customer support bot.
 
 CONVERSATION:
-- Understand the player's actual topic.
-- Answer questions directly and helpfully.
-- Remember the recent conversation.
-- Ask follow-up questions when they make sense.
-- Don't repeat the same opening or closing every message.
-- Don't say "I'm listening" or "tell me more" unnecessarily.
-- If someone changes topics, follow their new topic.
-- Never pretend to know something you don't.
+- Answer the player's actual topic.
+- Remember recent conversation.
+- Don't repeat the same responses.
+- Don't say "I'm listening" unnecessarily.
+- Follow the topic when someone changes it.
+- Give helpful and relevant answers.
 
-Keep replies reasonably short for Discord unless the player asks for detail.
+Keep replies reasonably short unless asked for detail.
 You are Redex Official, not ChatGPT.
 `;
 
@@ -78,8 +78,12 @@ async function askGemini(history) {
   const data = await response.json();
 
   if (!response.ok) {
-    console.error("Gemini API error:", data);
-    throw new Error("Gemini request failed");
+    console.error("========== GEMINI ERROR ==========");
+    console.error("HTTP STATUS:", response.status);
+    console.error("ERROR DETAILS:", JSON.stringify(data, null, 2));
+    console.error("==================================");
+
+    throw new Error(`Gemini HTTP ${response.status}`);
   }
 
   const answer = data.candidates?.[0]?.content?.parts
@@ -88,7 +92,8 @@ async function askGemini(history) {
     .trim();
 
   if (!answer) {
-    throw new Error("Gemini returned an empty response");
+    console.error("Gemini returned no answer:", JSON.stringify(data));
+    throw new Error("Empty Gemini response");
   }
 
   return answer;
@@ -103,14 +108,13 @@ client.on("messageCreate", async message => {
   if (message.channelId !== CHAT_CHANNEL_ID) return;
 
   if (!process.env.GEMINI_API_KEY) {
-    console.error("Missing GEMINI_API_KEY environment variable.");
-    return message.reply("My AI connection isn't configured yet 😭");
+    console.error("GEMINI_API_KEY is missing!");
+    return message.reply("My AI connection isn't configured 😭");
   }
 
   const userId = message.author.id;
   const now = Date.now();
 
-  // Anti-spam: more than 5 messages in 10 seconds
   const recent = (spamTracker.get(userId) || [])
     .filter(time => now - time < 10000);
 
@@ -119,12 +123,9 @@ client.on("messageCreate", async message => {
 
   if (recent.length > 5) {
     return message.reply(
-      "BRO 😭 slow down, you're flooding my brain. Give me a second!"
+      "BRO 😭 slow down, you're flooding my brain!"
     );
   }
-
-  const key = `${message.guildId}:${userId}`;
-  const history = conversations.get(key) || [];
 
   const playerMessage = message.content
     .replace(/<@!?\d+>/g, "")
@@ -132,12 +133,14 @@ client.on("messageCreate", async message => {
 
   if (!playerMessage) return;
 
+  const key = `${message.guildId}:${userId}`;
+  const history = conversations.get(key) || [];
+
   history.push({
     role: "user",
     parts: [{ text: `${message.author.username}: ${playerMessage}` }]
   });
 
-  // Keep the most recent 12 conversation turns
   while (history.length > 12) {
     history.shift();
   }
@@ -163,10 +166,10 @@ client.on("messageCreate", async message => {
     }
 
   } catch (error) {
-    console.error("Redex AI error:", error);
+    console.error("Redex AI failed:", error.message);
 
     await message.reply(
-      "My brain just lagged 💀 Try sending that again in a moment."
+      "My brain just lagged 💀 Check the connection and try again."
     );
   }
 });
