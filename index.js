@@ -62,7 +62,7 @@ You are Redex Official.
 `;
 
 async function askGemini(history) {
-  const delays = [1500, 3000, 5000];
+  const delays = [];
 
   for (let attempt = 0; attempt <= delays.length; attempt++) {
     const response = await fetch(
